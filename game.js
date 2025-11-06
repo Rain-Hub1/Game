@@ -1,128 +1,144 @@
-// --- 1. CONFIGURAÇÃO INICIAL ---
 
-// ATENÇÃO: Cole aqui a configuração do seu projeto Firebase!
-// Você encontra isso no Console do Firebase > Configurações do Projeto > Seus apps > App da Web
+
+
+
+
+
+
 const firebaseConfig = {
   apiKey: "AIzaSyDxS8QUm7HacD7F-zAmbH64ITDkQ8A4tVg",
   authDomain: "test-4bfe7.firebaseapp.com",
+  databaseURL: "https://test-4bfe7-default-rtdb.firebaseio.com",
   projectId: "test-4bfe7",
   storageBucket: "test-4bfe7.firebasestorage.app",
   messagingSenderId: "976394483611",
   appId: "1:976394483611:web:5ffb8abe8289f1c651133e"
 };
 
-// Inicializa o Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
-// Configura a tela (canvas)
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- PRÉ-CARREGAMENTO DE IMAGENS ---
+// --- 2. CARREGAMENTO DE ASSETS ---
 const playerImage = new Image();
 playerImage.src = 'https://raw.githubusercontent.com/Rain-Hub1/Game/refs/heads/main/images/Main/1762461467012%7E2.png';
-
 const punchImage = new Image();
 punchImage.src = 'https://raw.githubusercontent.com/Rain-Hub1/Game/refs/heads/main/images/Main/Screenshot_20251106-174105%7E2.png';
 
 let loadedCount = 0;
 const totalImages = 2;
-
-// Função para verificar se todas as imagens foram carregadas antes de iniciar o jogo
 function imageLoaded() {
     loadedCount++;
     if (loadedCount === totalImages) {
         startGame();
     }
 }
-
 playerImage.onload = imageLoaded;
 punchImage.onload = imageLoaded;
 
-// --- 2. LÓGICA DO JOGO ---
-
-// Cria um ID único e anônimo para o jogador nesta sessão
+// --- 3. LÓGICA DE CONTROLE E ESTADO DO JOGADOR ---
 const myPlayerId = "player_" + Math.random().toString(36).substr(2, 9);
-const allPlayers = {}; // Objeto local para guardar os dados de todos os jogadores
-const playersRef = database.ref('players'); // Referência ao nó "players" no banco de dados
+const allPlayers = {};
+const playersRef = database.ref('players');
 
-// Evento de toque/clique na tela
-document.addEventListener('pointerdown', (event) => {
-    const myPlayerRef = database.ref(`players/${myPlayerId}`);
-    
-    // Atualiza a posição e o estado de soco no Firebase
-    myPlayerRef.update({
-        x: event.clientX,
-        y: event.clientY,
-        isPunching: true
-    });
+// Objeto para guardar o estado dos controles
+const controls = {
+    up: false,
+    down: false,
+    left: false,
+    right: false
+};
 
-    // Volta ao estado "parado" após um curto período
-    setTimeout(() => {
-        myPlayerRef.update({ isPunching: false });
-    }, 300); // Duração da animação de soco em milissegundos
+const playerSpeed = 4; // Velocidade de movimento do jogador (pixels por quadro)
+
+// Mapeia os IDs dos botões para o nosso objeto de controle
+const controlMap = {
+    'up': 'up', 'down': 'down', 'left': 'left', 'right': 'right'
+};
+
+// Adiciona eventos de toque para os botões do D-pad
+['up', 'down', 'left', 'right'].forEach(id => {
+    const button = document.getElementById(id);
+    button.addEventListener('pointerdown', (e) => { e.preventDefault(); controls[controlMap[id]] = true; });
+    button.addEventListener('pointerup', (e) => { e.preventDefault(); controls[controlMap[id]] = false; });
+    button.addEventListener('pointerleave', (e) => { e.preventDefault(); controls[controlMap[id]] = false; }); // Para quando o dedo desliza para fora
 });
 
-// --- 3. SINCRONIZAÇÃO EM TEMPO REAL ---
+// Evento para o botão de soco
+const punchButton = document.getElementById('punch-button');
+punchButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const myPlayerRef = database.ref(`players/${myPlayerId}`);
+    myPlayerRef.update({ isPunching: true });
+    setTimeout(() => {
+        myPlayerRef.update({ isPunching: false });
+    }, 300);
+});
 
-// Escuta por QUALQUER mudança no nó "players" (novos jogadores, movimentos, etc.)
+// --- 4. SINCRONIZAÇÃO EM TEMPO REAL ---
 playersRef.on('value', (snapshot) => {
     const playersData = snapshot.val();
     if (playersData) {
-        // Atualiza nosso objeto local com os dados mais recentes do servidor
-        Object.assign(allPlayers, playersData);
+        // Atualiza todos os jogadores, mas preserva a posição do nosso jogador localmente
+        // para um movimento mais suave.
+        for (const playerId in playersData) {
+            if (playerId !== myPlayerId) {
+                allPlayers[playerId] = playersData[playerId];
+            }
+        }
     }
 });
 
-// Define uma ação para quando o jogador desconectar (fechar a aba/navegador)
-// Isso remove o jogador do banco de dados para que ele não fique "flutuando" no jogo
 database.ref(`players/${myPlayerId}`).onDisconnect().remove();
 
-// --- 4. FUNÇÃO DE DESENHO (GAME LOOP) ---
+// --- 5. RENDERIZAÇÃO E GAME LOOP ---
+function gameLoop() {
+    // --- Lógica de Movimento Local ---
+    const myPlayer = allPlayers[myPlayerId];
+    if (myPlayer) {
+        let positionChanged = false;
+        if (controls.up) { myPlayer.y -= playerSpeed; positionChanged = true; }
+        if (controls.down) { myPlayer.y += playerSpeed; positionChanged = true; }
+        if (controls.left) { myPlayer.x -= playerSpeed; positionChanged = true; }
+        if (controls.right) { myPlayer.x += playerSpeed; positionChanged = true; }
 
-function draw() {
-    // Limpa toda a tela a cada quadro para redesenhar
+        // Envia a atualização para o Firebase APENAS se a posição mudou
+        if (positionChanged) {
+            database.ref(`players/${myPlayerId}`).update({ x: myPlayer.x, y: myPlayer.y });
+        }
+    }
+
+    // --- Lógica de Desenho ---
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Itera sobre todos os jogadores no objeto local
     for (const playerId in allPlayers) {
         const player = allPlayers[playerId];
-        
-        // Escolhe qual imagem desenhar com base no estado 'isPunching'
         const imageToDraw = player.isPunching ? punchImage : playerImage;
-        
         const playerWidth = 80;
         const playerHeight = 80;
 
-        // Desenha a imagem na tela, centralizada na sua posição (x, y)
         if (player.x && player.y) {
              ctx.drawImage(imageToDraw, player.x - playerWidth / 2, player.y - playerHeight / 2, playerWidth, playerHeight);
         }
     }
 
-    // Pede ao navegador para chamar a função 'draw' novamente no próximo quadro de animação
-    requestAnimationFrame(draw);
+    requestAnimationFrame(gameLoop);
 }
 
-// --- 5. INÍCIO DO JOGO ---
+// --- 6. INICIALIZAÇÃO DO JOGO ---
 function startGame() {
-    // Define o estado inicial do nosso jogador
     allPlayers[myPlayerId] = { 
         x: canvas.width / 2, 
         y: canvas.height / 2, 
         isPunching: false 
     };
-    // Envia o estado inicial para o Firebase, criando o jogador no banco de dados
     database.ref(`players/${myPlayerId}`).set(allPlayers[myPlayerId]);
-    
-    // Inicia o loop de desenho
-    draw();
+    gameLoop(); // Inicia o loop principal do jogo
 }
 
-// Exibe uma mensagem de carregamento enquanto as imagens não carregam
 ctx.fillStyle = "white";
 ctx.font = "20px sans-serif";
 ctx.textAlign = "center";
