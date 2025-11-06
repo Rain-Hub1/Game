@@ -12,6 +12,7 @@
             -webkit-user-select: none;
             -ms-user-select: none;
             user-select: none;
+            touch-action: none;
         }
         canvas { 
             display: block; 
@@ -49,6 +50,11 @@
             border-radius: 50%;
             border: 2px solid rgba(255, 255, 255, 0.5);
             pointer-events: auto;
+            transition: all 0.1s;
+        }
+        .action-button:active {
+            background-color: rgba(255, 255, 255, 0.5);
+            transform: scale(0.95);
         }
         .d-pad-button {
             background-color: rgba(255, 255, 255, 0.3);
@@ -58,6 +64,10 @@
             background-size: 70%;
             background-repeat: no-repeat;
             background-position: center;
+            transition: all 0.1s;
+        }
+        .d-pad-button:active {
+            background-color: rgba(255, 255, 255, 0.5);
         }
         #up { grid-column: 2; grid-row: 1; transform: rotate(-90deg); }
         #left { grid-column: 1; grid-row: 2; transform: rotate(180deg); }
@@ -80,6 +90,249 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="game.js"></script>
+    <script>
+        // CONFIGURAÇÃO DO FIREBASE - SUBSTITUA PELAS SUAS CREDENCIAIS
+        const firebaseConfig = {
+            apiKey: "sua-api-key-aqui",
+            authDomain: "seu-projeto.firebaseapp.com",
+            databaseURL: "https://seu-projeto-default-rtdb.firebaseio.com",
+            projectId: "seu-projeto",
+            storageBucket: "seu-projeto.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "seu-app-id"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Carregamento de imagens com fallback
+        const playerImage = new Image();
+        playerImage.src = 'https://raw.githubusercontent.com/Rain-Hub1/Game/refs/heads/main/images/Main/1762461467012%7E2.png';
+        
+        const punchImage = new Image();
+        punchImage.src = 'https://raw.githubusercontent.com/Rain-Hub1/Game/refs/heads/main/images/Main/Screenshot_20251106-174105%7E2.png';
+
+        // Fallback para caso as imagens não carreguem
+        const createFallbackImage = (color) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 80;
+            canvas.height = 80;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, 80, 80);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 0, 80, 80);
+            return canvas;
+        };
+
+        let loadedCount = 0;
+        const totalImages = 2;
+        let imagesLoaded = false;
+        
+        function imageLoaded() {
+            loadedCount++;
+            if (loadedCount === totalImages) {
+                imagesLoaded = true;
+                startGame();
+            }
+        }
+
+        function imageError(e) {
+            console.error('Erro ao carregar imagem:', e.target.src);
+            // Continua mesmo com erro de imagem
+            loadedCount++;
+            if (loadedCount === totalImages && !imagesLoaded) {
+                imagesLoaded = true;
+                startGame();
+            }
+        }
+
+        playerImage.onload = imageLoaded;
+        playerImage.onerror = imageError;
+        punchImage.onload = imageLoaded;
+        punchImage.onerror = imageError;
+
+        // Configuração do jogador
+        const myPlayerId = "player_" + Math.random().toString(36).substr(2, 9);
+        const allPlayers = {};
+        const playersRef = database.ref('players');
+
+        // Controles
+        const controls = { up: false, down: false, left: false, right: false };
+        const playerSpeed = 4;
+        const controlMap = { 'up': 'up', 'down': 'down', 'left': 'left', 'right': 'right' };
+
+        // Configurar controles touch
+        ['up', 'down', 'left', 'right'].forEach(id => {
+            const button = document.getElementById(id);
+            button.addEventListener('touchstart', (e) => { 
+                e.preventDefault(); 
+                controls[controlMap[id]] = true; 
+            });
+            button.addEventListener('touchend', (e) => { 
+                e.preventDefault(); 
+                controls[controlMap[id]] = false; 
+            });
+            button.addEventListener('touchcancel', (e) => { 
+                e.preventDefault(); 
+                controls[controlMap[id]] = false; 
+            });
+        });
+
+        // Configurar botão de soco
+        const punchButton = document.getElementById('punch-button');
+        let isPunching = false;
+        
+        punchButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!isPunching) {
+                isPunching = true;
+                const myPlayerRef = database.ref(`players/${myPlayerId}`);
+                myPlayerRef.update({ 
+                    isPunching: true,
+                    lastPunch: Date.now()
+                });
+                
+                // Reset após 300ms
+                setTimeout(() => {
+                    isPunching = false;
+                    myPlayerRef.update({ isPunching: false });
+                }, 300);
+            }
+        });
+
+        // Sincronização com outros jogadores
+        playersRef.on('value', (snapshot) => {
+            const playersData = snapshot.val();
+            if (!playersData) return;
+            
+            for (const playerId in playersData) {
+                if (playerId !== myPlayerId) {
+                    if (!allPlayers[playerId]) {
+                        allPlayers[playerId] = {};
+                    }
+                    Object.assign(allPlayers[playerId], playersData[playerId]);
+                }
+            }
+        });
+
+        // Remover jogador quando desconectar
+        database.ref(`players/${myPlayerId}`).onDisconnect().remove();
+
+        function gameLoop() {
+            const myPlayer = allPlayers[myPlayerId];
+            if (myPlayer) {
+                let positionChanged = false;
+                
+                // Movimento
+                if (controls.up && myPlayer.y > 40) { 
+                    myPlayer.y -= playerSpeed; 
+                    positionChanged = true; 
+                }
+                if (controls.down && myPlayer.y < canvas.height - 40) { 
+                    myPlayer.y += playerSpeed; 
+                    positionChanged = true; 
+                }
+                if (controls.left && myPlayer.x > 40) { 
+                    myPlayer.x -= playerSpeed; 
+                    positionChanged = true; 
+                }
+                if (controls.right && myPlayer.x < canvas.width - 40) { 
+                    myPlayer.x += playerSpeed; 
+                    positionChanged = true; 
+                }
+
+                // Atualizar posição no Firebase se mudou
+                if (positionChanged) {
+                    database.ref(`players/${myPlayerId}`).update({ 
+                        x: myPlayer.x, 
+                        y: myPlayer.y 
+                    });
+                }
+            }
+
+            // Renderização
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (const playerId in allPlayers) {
+                const player = allPlayers[playerId];
+                if (!player || typeof player.x === 'undefined') continue;
+                
+                // Usar imagem de soco ou normal
+                const imageToDraw = player.isPunching ? punchImage : playerImage;
+                const playerWidth = 80;
+                const playerHeight = 80;
+                
+                if (imageToDraw.complete && imageToDraw.naturalHeight !== 0) {
+                    ctx.drawImage(imageToDraw, player.x - playerWidth / 2, player.y - playerHeight / 2, playerWidth, playerHeight);
+                } else {
+                    // Fallback visual
+                    ctx.fillStyle = playerId === myPlayerId ? '#00ff00' : '#ff0000';
+                    ctx.fillRect(player.x - playerWidth / 2, player.y - playerHeight / 2, playerWidth, playerHeight);
+                    
+                    // Indicador de soco
+                    if (player.isPunching) {
+                        ctx.fillStyle = '#ffff00';
+                        ctx.beginPath();
+                        ctx.arc(player.x + 40, player.y, 20, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                // Nome do jogador
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(playerId === myPlayerId ? 'Você' : 'Jogador', player.x, player.y - 50);
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            // Inicializar jogador
+            allPlayers[myPlayerId] = { 
+                x: canvas.width / 2, 
+                y: canvas.height / 2, 
+                isPunching: false,
+                lastPunch: 0
+            };
+            
+            // Enviar dados iniciais para o Firebase
+            database.ref(`players/${myPlayerId}`).set(allPlayers[myPlayerId]);
+            
+            // Iniciar loop do jogo
+            gameLoop();
+        }
+
+        // Redimensionar canvas quando a janela mudar de tamanho
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // Exibir mensagem de carregamento inicial
+        ctx.fillStyle = "white";
+        ctx.font = "20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Carregando...", canvas.width / 2, canvas.height / 2);
+
+        // Timeout de segurança para iniciar o jogo
+        setTimeout(() => {
+            if (!imagesLoaded) {
+                console.log('Iniciando com fallback devido a timeout');
+                imagesLoaded = true;
+                startGame();
+            }
+        }, 5000);
+
+    </script>
 </body>
 </html>
