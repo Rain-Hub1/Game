@@ -1,28 +1,28 @@
 {
-  "name": "my-app-test",
-  "version": "1.0.0",
+  "name": "game",
   "private": true,
   "sideEffects": false,
+  "type": "module",
   "scripts": {
     "build": "remix build",
-    "dev": "remix dev",
-    "start": "remix-serve build/index.js",
+    "dev": "remix dev --manual",
+    "start": "remix-serve ./build/index.js",
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@remix-run/dev": "^2.0.0",
-    "@remix-run/node": "^2.0.0",
-    "@remix-run/react": "^2.0.0",
-    "@remix-run/serve": "^2.0.0",
+    "@remix-run/dev": "^2.8.0",
+    "@remix-run/node": "^2.8.0",
+    "@remix-run/react": "^2.8.0",
+    "@remix-run/serve": "^2.8.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "isbot": "^4.1.0"
   },
   "devDependencies": {
-    "@remix-run/vercel": "^2.0.0",
+    "@remix-run/vercel": "^2.8.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "typescript": "^5.0.0",
+    "typescript": "^5.3.0",
     "vercel": "^32.0.0"
   },
   "engines": {
