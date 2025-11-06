@@ -47,7 +47,6 @@ const myPlayerId = "player_" + Math.random().toString(36).substr(2, 9);
 const allPlayers = {};
 const playersRef = database.ref('players');
 
-// Objeto para guardar o estado dos controles
 const controls = {
     up: false,
     down: false,
@@ -55,22 +54,21 @@ const controls = {
     right: false
 };
 
-const playerSpeed = 4; // Velocidade de movimento do jogador (pixels por quadro)
+const playerSpeed = 4;
 
-// Mapeia os IDs dos botões para o nosso objeto de controle
 const controlMap = {
     'up': 'up', 'down': 'down', 'left': 'left', 'right': 'right'
 };
 
-// Adiciona eventos de toque para os botões do D-pad
+// Adiciona eventos de toque APENAS para os botões do D-pad
 ['up', 'down', 'left', 'right'].forEach(id => {
     const button = document.getElementById(id);
     button.addEventListener('pointerdown', (e) => { e.preventDefault(); controls[controlMap[id]] = true; });
     button.addEventListener('pointerup', (e) => { e.preventDefault(); controls[controlMap[id]] = false; });
-    button.addEventListener('pointerleave', (e) => { e.preventDefault(); controls[controlMap[id]] = false; }); // Para quando o dedo desliza para fora
+    button.addEventListener('pointerleave', (e) => { e.preventDefault(); controls[controlMap[id]] = false; });
 });
 
-// Evento para o botão de soco
+// Evento APENAS para o botão de soco
 const punchButton = document.getElementById('punch-button');
 punchButton.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -85,8 +83,6 @@ punchButton.addEventListener('pointerdown', (e) => {
 playersRef.on('value', (snapshot) => {
     const playersData = snapshot.val();
     if (playersData) {
-        // Atualiza todos os jogadores, mas preserva a posição do nosso jogador localmente
-        // para um movimento mais suave.
         for (const playerId in playersData) {
             if (playerId !== myPlayerId) {
                 allPlayers[playerId] = playersData[playerId];
@@ -99,7 +95,6 @@ database.ref(`players/${myPlayerId}`).onDisconnect().remove();
 
 // --- 5. RENDERIZAÇÃO E GAME LOOP ---
 function gameLoop() {
-    // --- Lógica de Movimento Local ---
     const myPlayer = allPlayers[myPlayerId];
     if (myPlayer) {
         let positionChanged = false;
@@ -108,13 +103,11 @@ function gameLoop() {
         if (controls.left) { myPlayer.x -= playerSpeed; positionChanged = true; }
         if (controls.right) { myPlayer.x += playerSpeed; positionChanged = true; }
 
-        // Envia a atualização para o Firebase APENAS se a posição mudou
         if (positionChanged) {
             database.ref(`players/${myPlayerId}`).update({ x: myPlayer.x, y: myPlayer.y });
         }
     }
 
-    // --- Lógica de Desenho ---
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const playerId in allPlayers) {
         const player = allPlayers[playerId];
@@ -138,7 +131,7 @@ function startGame() {
         isPunching: false 
     };
     database.ref(`players/${myPlayerId}`).set(allPlayers[myPlayerId]);
-    gameLoop(); // Inicia o loop principal do jogo
+    gameLoop();
 }
 
 ctx.fillStyle = "white";
